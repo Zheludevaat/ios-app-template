@@ -1,0 +1,44 @@
+name: Build unsigned IPA
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Theos
+        run: |
+          export THEOS=~/theos
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
+
+      - name: Build app
+        run: |
+          export THEOS=~/theos
+          make package FINALPACKAGE=1
+
+      - name: Create unsigned IPA
+        run: |
+          # Find the built .app (Theos stages it under .theos/_/Applications/)
+          APP_PATH=$(find .theos/_ -name "*.app" -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: Could not find .app bundle. Listing .theos directory:"
+            find .theos -type d
+            exit 1
+          fi
+          echo "Found app at: $APP_PATH"
+          mkdir -p Payload
+          cp -r "$APP_PATH" Payload/
+          zip -r MyApp.ipa Payload/
+          echo "IPA created: $(ls -lh MyApp.ipa)"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyApp-unsigned
+          path: MyApp.ipa

@@ -1,0 +1,8 @@
+Package: com.example.myapp
+Name: MyApp
+Version: 1.0
+Architecture: iphoneos-arm
+Description: A simple iOS app built without a Mac
+Maintainer: You
+Author: You
+Section: Applications
