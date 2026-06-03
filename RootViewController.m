@@ -30,38 +30,52 @@ static NSString *const kURLUserDefaultsKey = @"aloud_server_url";
     WKPreferences *prefs = [[WKPreferences alloc] init];
     config.preferences = prefs;
 
-    // Inject chunk-loading retry script for Next.js compatibility on WKWebView.
-    // webpack dynamic chunk loading sometimes fails on first attempt in WKWebView;
-    // this patches createElement('script') to retry up to 3 times on error.
-    NSString *retryScript = @"\
-(() => {\
-  const orig = document.createElement.bind(document);\
-  document.createElement = function(tag, opts) {\
-    const el = orig(tag, opts);\
-    if (tag.toLowerCase() === 'script' && el.src) {\
-      let retries = 0;\
-      const max = 3;\
-      const onerror = function() {\
-        if (++retries <= max) {\
-          const s = orig('script');\
-          s.src = el.src;\
-          if (el.crossOrigin) s.crossOrigin = el.crossOrigin;\
-          if (el.integrity) s.integrity = el.integrity;\
-          s.onerror = onerror;\
-          s.onload = el.onload;\
-          document.head.appendChild(s);\
-        }\
-      };\
-      el.addEventListener('error', onerror);\
-    }\
-    return el;\
+    // Inject chunk-loading compat + error reporting for Next.js on WKWebView.
+    // 1) Patches HTMLScriptElement.prototype.src setter to attach error->retry logic.
+    // 2) Sends uncaught errors to native side via webkit.messageHandlers.error.postMessage.
+    NSString *compatScript = @"\
+(function(){\
+  var desc=Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype,'src');\
+  var origSet=desc.set;\
+  var retried=new WeakSet();\
+  desc.set=function(url){\
+    origSet.call(this,url);\
+    if(!url)return;\
+    var el=this;\
+    var retries=0;\
+    var max=3;\
+    el.addEventListener('error',function onErr(){\
+      if(retried.has(el))return;\
+      if(++retries>max)return;\
+      retried.add(el);\
+      var s=document.createElement('script');\
+      s.src=url;\
+      if(el.crossOrigin)s.crossOrigin=el.crossOrigin;\
+      if(el.integrity)s.integrity=el.integrity;\
+      s.addEventListener('error',onErr);\
+      s.onload=el.onload;\
+      s.onerror=el.onerror;\
+      document.head.appendChild(s);\
+    });\
   };\
+  Object.defineProperty(HTMLScriptElement.prototype,'src',desc);\
+  window.addEventListener('error',function(e){\
+    if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.error){\
+      window.webkit.messageHandlers.error.postMessage(e.message+' | '+e.filename+' :'+e.lineno);\
+    }\
+  });\
+  window.addEventListener('unhandledrejection',function(e){\
+    if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.error){\
+      window.webkit.messageHandlers.error.postMessage('Promise: '+e.reason);\
+    }\
+  });\
 })();";
-    WKUserScript *chunkRetryUserScript = [[WKUserScript alloc]
-        initWithSource:retryScript
+    WKUserScript *compatUserScript = [[WKUserScript alloc]
+        initWithSource:compatScript
         injectionTime:WKUserScriptInjectionTimeAtDocumentStart
-        forMainFrameOnly:YES];
-    [config.userContentController addUserScript:chunkRetryUserScript];
+        forMainFrameOnly:NO];
+    [config.userContentController addUserScript:compatUserScript];
+    [config.userContentController addScriptMessageHandler:self name:@"error"];
 
     // Create WebView
     self.webView = [[WKWebView alloc] initWithFrame:CGRectZero configuration:config];
@@ -198,6 +212,17 @@ static NSString *const kURLUserDefaultsKey = @"aloud_server_url";
         completionHandler(YES);
     }]];
     [self presentViewController:alert animated:YES completion:nil];
+}
+
+#pragma mark - WKScriptMessageHandler
+
+- (void)userContentController:(WKUserContentController *)userContentController didReceiveScriptMessage:(WKScriptMessage *)message {
+    if ([message.name isEqualToString:@"error"]) {
+        NSLog(@"WKWebView JS error: %@", message.body);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self showError:[NSString stringWithFormat:@"JS Error:\n%@\n\nURL: %@", message.body, _currentURL]];
+        });
+    }
 }
 
 #pragma mark - Status Bar
