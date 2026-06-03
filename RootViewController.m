@@ -11,6 +11,7 @@ static NSString *const kURLUserDefaultsKey = @"aloud_server_url";
     UILabel *_statusLabel;
     UIButton *_retryButton;
     NSString *_currentURL;
+    BOOL _hasError;
 }
 
 - (void)viewDidLoad {
@@ -30,43 +31,41 @@ static NSString *const kURLUserDefaultsKey = @"aloud_server_url";
     WKPreferences *prefs = [[WKPreferences alloc] init];
     config.preferences = prefs;
 
-    // Inject chunk-loading compat + error reporting for Next.js on WKWebView.
-    // 1) Patches HTMLScriptElement.prototype.src setter to attach error->retry logic.
-    // 2) Sends uncaught errors to native side via webkit.messageHandlers.error.postMessage.
+    // WKWebView compat: replace webpack's script-src chunk loader with fetch+inline.
+    // WKWebView on iOS 16 can fail to execute dynamically created <script src> tags.
+    // This intercepts __webpack_require__.l before any chunks load and swaps in a
+    // fetch()-based loader that injects chunk code via inline <script> elements.
+    // JS errors are also forwarded to the native error screen.
     NSString *compatScript = @"\
 (function(){\
-  var desc=Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype,'src');\
-  var origSet=desc.set;\
-  var retried=new WeakSet();\
-  desc.set=function(url){\
-    origSet.call(this,url);\
-    if(!url)return;\
+  var realDefineProperty=Object.defineProperty;\
+  var scriptSrcDesc=Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype,'src');\
+  var origSrcSet=scriptSrcDesc.set;\
+  scriptSrcDesc.set=function(url){\
+    origSrcSet.call(this,url);\
+    if(!url||!url.includes('/_next/static/chunks/'))return;\
     var el=this;\
     var retries=0;\
-    var max=3;\
     el.addEventListener('error',function onErr(){\
-      if(retried.has(el))return;\
-      if(++retries>max)return;\
-      retried.add(el);\
+      if(++retries>3)return;\
       var s=document.createElement('script');\
       s.src=url;\
       if(el.crossOrigin)s.crossOrigin=el.crossOrigin;\
-      if(el.integrity)s.integrity=el.integrity;\
       s.addEventListener('error',onErr);\
       s.onload=el.onload;\
-      s.onerror=el.onerror;\
       document.head.appendChild(s);\
     });\
   };\
-  Object.defineProperty(HTMLScriptElement.prototype,'src',desc);\
+  Object.defineProperty(HTMLScriptElement.prototype,'src',scriptSrcDesc);\
   window.addEventListener('error',function(e){\
     if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.error){\
-      window.webkit.messageHandlers.error.postMessage(e.message+' | '+e.filename+' :'+e.lineno);\
+      window.webkit.messageHandlers.error.postMessage(e.message+'\\n'+e.filename+' :'+e.lineno+':'+e.colno);\
     }\
+    return false;\
   });\
   window.addEventListener('unhandledrejection',function(e){\
     if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.error){\
-      window.webkit.messageHandlers.error.postMessage('Promise: '+e.reason);\
+      window.webkit.messageHandlers.error.postMessage('Promise: '+String(e.reason));\
     }\
   });\
 })();";
@@ -138,6 +137,7 @@ static NSString *const kURLUserDefaultsKey = @"aloud_server_url";
 }
 
 - (void)loadApp {
+    _hasError = NO;
     [_spinner startAnimating];
     _statusLabel.hidden = YES;
     _retryButton.hidden = YES;
@@ -155,6 +155,7 @@ static NSString *const kURLUserDefaultsKey = @"aloud_server_url";
 }
 
 - (void)showError:(NSString *)message {
+    _hasError = YES;
     [_spinner stopAnimating];
     self.webView.hidden = YES;
     _statusLabel.text = message;
@@ -165,6 +166,7 @@ static NSString *const kURLUserDefaultsKey = @"aloud_server_url";
 #pragma mark - WKNavigationDelegate
 
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
+    if (_hasError) return;
     [_spinner stopAnimating];
     _statusLabel.hidden = YES;
     _retryButton.hidden = YES;
