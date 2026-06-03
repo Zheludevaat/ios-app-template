@@ -30,6 +30,39 @@ static NSString *const kURLUserDefaultsKey = @"aloud_server_url";
     WKPreferences *prefs = [[WKPreferences alloc] init];
     config.preferences = prefs;
 
+    // Inject chunk-loading retry script for Next.js compatibility on WKWebView.
+    // webpack dynamic chunk loading sometimes fails on first attempt in WKWebView;
+    // this patches createElement('script') to retry up to 3 times on error.
+    NSString *retryScript = @"\
+(() => {\
+  const orig = document.createElement.bind(document);\
+  document.createElement = function(tag, opts) {\
+    const el = orig(tag, opts);\
+    if (tag.toLowerCase() === 'script' && el.src) {\
+      let retries = 0;\
+      const max = 3;\
+      const onerror = function() {\
+        if (++retries <= max) {\
+          const s = orig('script');\
+          s.src = el.src;\
+          if (el.crossOrigin) s.crossOrigin = el.crossOrigin;\
+          if (el.integrity) s.integrity = el.integrity;\
+          s.onerror = onerror;\
+          s.onload = el.onload;\
+          document.head.appendChild(s);\
+        }\
+      };\
+      el.addEventListener('error', onerror);\
+    }\
+    return el;\
+  };\
+})();";
+    WKUserScript *chunkRetryUserScript = [[WKUserScript alloc]
+        initWithSource:retryScript
+        injectionTime:WKUserScriptInjectionTimeAtDocumentStart
+        forMainFrameOnly:YES];
+    [config.userContentController addUserScript:chunkRetryUserScript];
+
     // Create WebView
     self.webView = [[WKWebView alloc] initWithFrame:CGRectZero configuration:config];
     self.webView.navigationDelegate = self;
