@@ -34,11 +34,11 @@ jobs:
           echo "Found app at: $APP_PATH"
           mkdir -p Payload
           cp -r "$APP_PATH" Payload/
-          zip -r MyApp.ipa Payload/
-          echo "IPA created: $(ls -lh MyApp.ipa)"
+          zip -r Aloud.ipa Payload/
+          echo "IPA created: $(ls -lh Aloud.ipa)"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MyApp-unsigned
-          path: MyApp.ipa
+          name: Aloud-unsigned
+          path: Aloud.ipa

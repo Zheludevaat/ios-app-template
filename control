@@ -1,8 +1,8 @@
-Package: com.example.myapp
-Name: MyApp
-Version: 1.0
+Package: com.aloud.reader
+Name: Aloud
+Version: 3.0.0
 Architecture: iphoneos-arm
-Description: A simple iOS app built without a Mac
-Maintainer: You
-Author: You
+Description: ElevenReader TTS replacement — text-to-speech reader
+Maintainer: Aloud
+Author: Aloud
 Section: Applications
