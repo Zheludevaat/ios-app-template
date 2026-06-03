@@ -3,7 +3,7 @@
 // Change this to your server URL before building.
 // For local dev on same WiFi: http://<YOUR_PC_IP>:3003
 // For production: your hosted HTTPS URL
-static NSString *const kDefaultURL = @"http://localhost:3003";
+static NSString *const kDefaultURL = @"http://192.168.99.119:3003";
 static NSString *const kURLUserDefaultsKey = @"aloud_server_url";
 
 @implementation RootViewController {

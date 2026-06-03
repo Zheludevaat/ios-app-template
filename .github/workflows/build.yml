@@ -12,10 +12,41 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Theos
+      - name: Install Theos dependencies
+        run: brew install ldid
+
+      - name: Clone Theos
         run: |
-          export THEOS=~/theos
-          bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
+          if [ ! -d ~/theos ]; then
+            git clone --depth 1 https://github.com/theos/theos ~/theos --recursive
+          fi
+
+      - name: Install Theos SDK
+        run: |
+          THEOS=~/theos
+          SDK_DIR="$THEOS/sdks"
+          mkdir -p "$SDK_DIR"
+          # Only download if SDK not already cached
+          if [ ! -f "$SDK_DIR/iPhoneOS16.5.sdk/SDKSettings.plist" ]; then
+            echo "Downloading iPhoneOS16.5 SDK..."
+            curl -fsSL -o /tmp/iphoneos_sdk.zip "https://github.com/theos/sdks/releases/download/master/iPhoneOS16.5.sdk.zip" || \
+            curl -fsSL -o /tmp/iphoneos_sdk.zip "https://cdn.altstore.io/sdks/iPhoneOS16.5.sdk.zip" || \
+            curl -fsSL -o /tmp/iphoneos_sdk.zip "https://api.github.com/repos/theos/sdks/zipball/master"
+            if [ -f /tmp/iphoneos_sdk.zip ]; then
+              unzip -qo /tmp/iphoneos_sdk.zip -d "$SDK_DIR/"
+              # If it extracted to a subdirectory, move contents
+              if [ ! -f "$SDK_DIR/iPhoneOS16.5.sdk/SDKSettings.plist" ]; then
+                mv "$SDK_DIR"/*/iPhoneOS16.5.sdk "$SDK_DIR/" 2>/dev/null || true
+              fi
+            fi
+          fi
+          ls -la "$SDK_DIR/" || true
+          # Verify
+          if [ ! -f "$SDK_DIR/iPhoneOS16.5.sdk/SDKSettings.plist" ]; then
+            echo "ERROR: SDK installation failed"
+            exit 1
+          fi
+          echo "SDK installed successfully"
 
       - name: Build app
         run: |
