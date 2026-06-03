@@ -26,15 +26,14 @@ static NSString *const kURLUserDefaultsKey = @"aloud_server_url";
     config.allowsInlineMediaPlayback = YES;
     config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
 
-    // Allow persistent storage (IndexedDB, LocalStorage, etc.)
+    // JavaScript is enabled by default; allow persistent storage via preferences
     WKPreferences *prefs = [[WKPreferences alloc] init];
-    prefs.javaScriptEnabled = YES;
     config.preferences = prefs;
 
     // Create WebView
     self.webView = [[WKWebView alloc] initWithFrame:CGRectZero configuration:config];
     self.webView.navigationDelegate = self;
-    self.webView.uidDelegate = self;
+    self.webView.UIDelegate = self;
     self.webView.translatesAutoresizingMaskIntoConstraints = NO;
     self.webView.backgroundColor = [UIColor blackColor];
     self.webView.opaque = NO;

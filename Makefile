@@ -6,6 +6,6 @@ include $(THEOS)/makefiles/common.mk
 APPLICATION_NAME = Aloud
 Aloud_FILES = main.m AppDelegate.m RootViewController.m
 Aloud_FRAMEWORKS = UIKit Foundation CoreGraphics WebKit AVFoundation
-Aloud_CFLAGS = -fobjc-arc
+Aloud_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
 
 include $(THEOS_MAKE_PATH)/application.mk
